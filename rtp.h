@@ -91,9 +91,34 @@ typedef struct _RtpHandler
 
 }RtpHandler;
 
+/**
+   发送rtp数据
+   data: 媒体数据
+   size：数据长度
+   handler：句柄
+   is_tcp： 0：基于udp的rtp，1：基于tcp
+**/
 int send_rtp(void* data, size_t size, RtpHandler* handler, int is_tcp);
+/**
+	初始化rtphandler
+	handler：句柄
+	ssrc：rtp协议中的ssrc
+	fps：帧率
+	payloadType：国标流在rtp中的负载是96
+	mtu：最大传输单元
+	ip：接收方的ip
+	port: 接收放的port
+**/
 int init_rtp(RtpHandler* handler, int ssrc, int fps, int payloadType, int mtu, char* ip, short port);
+
+/**
+	设置发送rtp包的本地端口
+	rtcp是port+1
+**/
 int set_base_port(RtpHandler* handler, short port);
+/**
+释放handler
+**/
 int rtp_destroy(RtpHandler* handler);
 
 
