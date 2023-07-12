@@ -1,7 +1,6 @@
-#include <string>
-#include <mutex>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <time.h>
 
 /****  only support little endian  ****/
 typedef struct _RtpHeader{
@@ -121,8 +120,6 @@ int set_base_port(RtpHandler* handler, short port);
 **/
 int rtp_destroy(RtpHandler* handler);
 
-
-using namespace std;
 extern FILE* logfile;
 extern char date[64];
 extern int log_lock;

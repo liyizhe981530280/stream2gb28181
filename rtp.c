@@ -8,8 +8,6 @@
 #include <sys/time.h>
 
 FILE* logfile;
-string logPath;
-std::mutex logMutex;
 char date[64] = "";
 int log_lock;
 
