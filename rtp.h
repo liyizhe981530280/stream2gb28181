@@ -124,7 +124,6 @@ int rtp_destroy(RtpHandler* handler);
 
 using namespace std;
 extern FILE* logfile;
-extern std::mutex logMutex;
 extern char date[64];
 extern int log_lock;
 
@@ -136,7 +135,6 @@ extern int log_lock;
 	{\
 		fprintf(logfile, "[%s:%d]--" _format "", __FILE__, __LINE__, ##__VA_ARGS__);\
 	}else{\
-		logMutex.lock();\
 		time_t _now_time;\
 		struct tm* _info;\
 		char _buffer[80] = "";\
