@@ -40,13 +40,13 @@ int init_rtp(RtpHandler* handler, int ssrc, int fps, int payloadType, int mtu, c
 		handler->fps = fps;
 
 	if(payloadType == -1)
-		handler->rtp_header.payload_type = 96;
+		handler->rtp_header.payload_type = 96; // gd28181 is 96
 	else
 		handler->rtp_header.payload_type = payloadType;
 
 	handler->diff_ts = 90000/handler->fps;
 	if(mtu == -1)
-		handler->mtu = 1472;
+		handler->mtu = 1472; // default udp value
 	else
 		handler->mtu = mtu;
 
@@ -85,20 +85,20 @@ int send_rtcp(RtpHandler* handler, int is_tcp)
 
 	if(is_tcp != 1){
 		int ret = sendto(handler->rtcp_sock, &(handler->rtcp_header), sizeof(RtcpHeader), 0, (struct sockaddr *)&handler->rtcp_addr, (socklen_t)sizeof(struct sockaddr));
-		if(ret < 0){
+		if(ret <= 0){
 
-			TOLOG("sendto error:%s\n", strerror(errno));
+			TOLOG("sendto error or peer close:%d--%s\n", ret, strerror(errno));
 			return -1;
 		}
 	}else{
 
 		unsigned short data_size;
 		data_size = htons(sizeof(RtcpHeader));
-		int ret = send(handler->rtcp_sock, &data_size, sizeof(short), 0);
-		ret = send(handler->rtcp_sock, &(handler->rtcp_header), sizeof(RtcpHeader), 0);
-		if(ret < 0){
+		int ret = send(handler->rtcp_sock, &data_size, sizeof(short), MSG_WAITALL|MSG_NOSIGNAL);
+		ret = send(handler->rtcp_sock, &(handler->rtcp_header), sizeof(RtcpHeader), MSG_WAITALL|MSG_NOSIGNAL);
+		if(ret <= 0){
 
-			TOLOG("send error:%s\n", strerror(errno));
+			TOLOG("send error or peer close:%d--%s\n", ret, strerror(errno));
 			return -1;
 		}
 	}
@@ -126,7 +126,7 @@ static int create_socket(RtpHandler* handler, int is_tcp)
 		return -1;
 	}
 
-	if(handler->base_port > 0){
+	if(handler->base_port > 0){ // 如果指定了client的端口
 
 		struct sockaddr_in addr_rtp;
 		addr_rtp.sin_family = AF_INET;
@@ -208,7 +208,7 @@ static int send_rtp_packet(RtpHandler* handler, int size, int is_tcp)
 		ret = send(handler->rtp_sock, handler->data, size, MSG_WAITALL|MSG_NOSIGNAL);
 		if(ret <= 0){
 
-			TOLOG("send error:%s\n", strerror(errno));
+			TOLOG("send error or peer close:%d--%s\n", ret, strerror(errno));
 			return -1;
 		}
 	}
@@ -241,7 +241,7 @@ int send_rtp(void* data, size_t size, RtpHandler* handler, int is_tcp)
 		if(create_socket(handler, is_tcp) < 0)
 			return -1;
 
-		if(is_tcp == 1 && handler->mtu < 1460){ // 如果是tcp  修改mtu
+		if(is_tcp == 1 && handler->mtu < 1460){ // 如果是tcp  修改mtu ,不麻烦协议栈分包了 
 			handler->data = realloc(handler->data, 1460);
 			handler->mtu = 1460;
 		}
@@ -263,7 +263,7 @@ int send_rtp(void* data, size_t size, RtpHandler* handler, int is_tcp)
 	{
 		handler->rtcp_header.ntp_ts_high32 = htonl(tv.tv_sec + 0x83AA7E80); // ntp_ts_high32表示1900-now的秒数, 0x83AA7E80是1900-1970的秒数
 		handler->rtcp_header.ntp_ts_low32 = htonl(tv.tv_usec*1000);         // ms
-		send_rtcp(handler, is_tcp);
+		send_rtcp(handler, is_tcp);  // rtcp ,no need to check return value
 		handler->rtcp_counter = tv.tv_sec;
 	}
 
@@ -271,7 +271,7 @@ int send_rtp(void* data, size_t size, RtpHandler* handler, int is_tcp)
 	while(1)
 	{
 
-		if(size-index <= 0)
+		if(size-index <= 0) // no data
 			break;
 
 		int send_size = 0;
@@ -320,16 +320,19 @@ int rtp_destroy(RtpHandler* handler)
 	if(handler->rtp_sock != -1)
 	{
 		close(handler->rtp_sock);
+		handler->rtp_sock = -1;
 	}
 
 	if(handler->rtcp_sock != -1)
 	{
 		close(handler->rtcp_sock);
+		handler->rtcp_sock = -1;
 	}
 
 	if(handler->data != NULL)
 	{
 		free(handler->data);
+		handler->data = NULL;
 	}
 
 	return 0;

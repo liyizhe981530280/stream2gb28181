@@ -93,6 +93,10 @@ static int openInput(AVFormatContext** inputContext, const char* inputfile, int6
 			audioIndex = i;
 		}
 	}
+
+	if(videoIndex != -1 && audioIndex != -1)
+		return ret;
+
 	/*** 检查time_base
 	 *   发现某些视频经常出现流的time_base和codec的time_base值是反的情况
 	 *   这个逻辑可以纠正这个情况
@@ -100,36 +104,32 @@ static int openInput(AVFormatContext** inputContext, const char* inputfile, int6
 	int check_count = 0;
 	while(1){
 
-		if(videoIndex != -1 && audioIndex != -1){
-			float audio_start_pts = (float)(((*inputContext)->streams[audioIndex]->start_time) * av_q2d((*inputContext)->streams[audioIndex]->time_base));
-			float video_start_pts = (float)(((*inputContext)->streams[videoIndex]->start_time) * av_q2d((*inputContext)->streams[videoIndex]->time_base));
 
-			if(audio_start_pts-video_start_pts > 10.00 || audio_start_pts-video_start_pts < -10.00) // timebase error, reset timebase 
-			{
+		float audio_start_pts = (float)(((*inputContext)->streams[audioIndex]->start_time) * av_q2d((*inputContext)->streams[audioIndex]->time_base));
+		float video_start_pts = (float)(((*inputContext)->streams[videoIndex]->start_time) * av_q2d((*inputContext)->streams[videoIndex]->time_base));
 
-				if(check_count == 1){
+		if(audio_start_pts-video_start_pts > 10.00 || audio_start_pts-video_start_pts < -10.00) // timebase error, reset timebase 
+		{
 
-					TOLOG("drop audio\n");
-					dropAudio = 1;
+			if(check_count == 1){
 
-					break;
-				}
-				if((*inputContext)->streams[audioIndex]->time_base.den/(*inputContext)->streams[audioIndex]->time_base.num == 90000){
-					TOLOG("reset stream time_base(codec tb) [%d,%d]\n",  (*inputContext)->streams[audioIndex]->codec->time_base.num, (*inputContext)->streams[audioIndex]->codec->time_base.den);
-
-					(*inputContext)->streams[audioIndex]->time_base.num = (*inputContext)->streams[audioIndex]->codec->time_base.num;
-					(*inputContext)->streams[audioIndex]->time_base.den = (*inputContext)->streams[audioIndex]->codec->time_base.den;
-				}else{
-
-					TOLOG("reset time_base [%d.%d]->[1,90000]\n", (*inputContext)->streams[audioIndex]->codec->time_base.num, (*inputContext)->streams[audioIndex]->codec->time_base.den);
-					(*inputContext)->streams[audioIndex]->time_base.num = 1;
-					(*inputContext)->streams[audioIndex]->time_base.den = 90000;
-				}
-				check_count++;
-			}else{
+				TOLOG("drop audio\n");
+				dropAudio = 1;
 
 				break;
 			}
+			if((*inputContext)->streams[audioIndex]->time_base.den/(*inputContext)->streams[audioIndex]->time_base.num == 90000){
+				TOLOG("reset stream time_base to codec tb [%d,%d]\n",  (*inputContext)->streams[audioIndex]->codec->time_base.num, (*inputContext)->streams[audioIndex]->codec->time_base.den);
+
+				(*inputContext)->streams[audioIndex]->time_base.num = (*inputContext)->streams[audioIndex]->codec->time_base.num;
+				(*inputContext)->streams[audioIndex]->time_base.den = (*inputContext)->streams[audioIndex]->codec->time_base.den;
+			}else{
+
+				TOLOG("reset time_base [%d.%d]->[1,90000]\n", (*inputContext)->streams[audioIndex]->codec->time_base.num, (*inputContext)->streams[audioIndex]->codec->time_base.den);
+				(*inputContext)->streams[audioIndex]->time_base.num = 1;
+				(*inputContext)->streams[audioIndex]->time_base.den = 90000;
+			}
+			check_count++;
 		}else{
 
 			break;
@@ -177,9 +177,6 @@ int initAudioEncodeCodec(AVStream* inputStream, AVCodecContext** encodeContext)
 		(*encodeContext)->channel_layout = av_get_default_channel_layout(inputStream->codecpar->channels);
 	}
 	(*encodeContext)->sample_fmt = audioCodec->sample_fmts[0];
-
-	//if (ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
-	(*encodeContext)->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
 
 	(*encodeContext)->codec_tag = 0;
 	ret = avcodec_open2((*encodeContext), audioCodec, 0);
@@ -485,7 +482,7 @@ static int ps_write(void* param, int stream, void* packet, size_t bytes)
 		set_base_port(rtp_handler, 12900);
 	}
 
-	send_rtp(packet, bytes, rtp_handler, 0);
+	send_rtp(packet, bytes, rtp_handler, 0); // TODO  check return value?
 	if(param != NULL){
 		fwrite(packet, bytes, 1, (FILE*)param) ? 0 : ferror((FILE*)param);
 		fflush((FILE*)param);
@@ -531,7 +528,7 @@ static void dump_format(AVFormatContext* inputContext, int videoIndex, int audio
 			char codec_tag[128] = "";
 			snprintf(videoInfo+strlen(videoInfo), sizeof(videoInfo)," (%s)", av_fourcc_make_string(codec_tag, st->codec->codec_tag));
 		}else{
-		
+
 			snprintf(videoInfo+strlen(videoInfo), sizeof(videoInfo)," (%s)", "no codec tag");
 		}
 
@@ -549,7 +546,7 @@ static void dump_format(AVFormatContext* inputContext, int videoIndex, int audio
 	}	
 
 	if(audioIndex != -1 && inputContext->streams[audioIndex]->codec){
-	
+
 		AVStream* st = inputContext->streams[audioIndex];
 
 		char audioInfo[4096] = "";
@@ -611,6 +608,7 @@ int stream_mux(const char* filename)
 	if (videoIndex == -1 && audioIndex == -1)
 	{
 		ret = -1;
+		TOLOG("can`t find any stream, exit\n");
 		goto End;
 	}
 
@@ -696,7 +694,7 @@ int stream_mux(const char* filename)
 					}
 
 				}
-				else {  //not aac 
+				else {  //not aac, convert to aac
 
 
 					AVFrame* frame = DecodeAudio(packet, decodeContext ); // 解码
